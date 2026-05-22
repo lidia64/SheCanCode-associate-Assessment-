@@ -1,155 +1,250 @@
-# Idempotency-Gateway (The "Pay-Once" Protocol)
+# Idempotency Gateway
 
-This challenge is designed to test your ability to bridge Computer Science fundamentals with Modern Backend Engineering.
+Python implementation of IgirePay Technologies Ltd.'s Pay-Once Protocol.
 
-## 1. Business Context
+This service prevents duplicate charges when a client retries a payment request after a timeout. The first request for an `Idempotency-Key` is processed and stored. Later identical requests with the same key return the original response immediately.
 
-> **Client:** IgirePay Technologies Ltd._ (A fast-growing Payment Processor).
+## Architecture Diagram
 
-### The Problem
+![Idempotency Gateway architecture](docs/architecture.svg)
 
-IgirePay Technologies's clients (e-commerce shops) occasionally experience network timeouts. When this happens, their servers automatically retry sending payment requests. Recently, this has led to a critical issue: **Double Charging**.
+## Setup Instructions
 
-If a customer clicks "Pay," the request is sent, but the network lags. The client retries the request. IgirePay Technologies processes _both_ requests, charging the customer twice. This is causing customer churn and regulatory headaches.
+Requirements:
 
-### The Solution
+- Python 3.10 or newer
+- No external packages required
 
-IgirePay Technologies needs you to build an **Idempotency Layer**. This is a middleware service (or API) that ensures no matter how many times a client sends the same request, the payment is processed **exactly once**.
+Run the server:
 
----
+```powershell
+python app.py
+```
 
-## 2. Technical Objective
+Open the browser demo:
 
-Build a RESTful API that mimics a payment processing backend. It must check for a unique `Idempotency-Key` in the HTTP headers.
+```text
+http://127.0.0.1:5000
+```
 
-- **First Request:** Process the payment and save the response.
-- **Duplicate Request:** Detect the existing key and return the _saved_ response immediately, without processing the payment again.
+Run tests:
 
----
+```powershell
+python -m unittest -v
+```
 
-## 3. Getting Started
+The demo API key is:
 
-1.  **Fork this Repository:** Do not clone it directly. Create a fork to your own GitHub account.
-2.  **Environment:** You may use **Node.js, Python, Java or Go, etc.**. You may use any database or in-memory store (Redis, SQLite, or a simple native Map/Dictionary variable).
-3.  **Submission:** Your final submission will be a link to your forked repository containing the source code and documentation.
+```text
+test_secret_key
+```
 
----
+## API Documentation
 
-## 4. The Architecture Diagram
+### POST /process-payment
 
-**Task:** Before you write any code, you must design the logic flow.
-**Deliverable:** A **Sequence Diagram** or **Flowchart** included in your README.
+Processes a mock payment exactly once per idempotency key.
 
----
+Required headers:
 
-## 5. User Stories & Acceptance Criteria
+```text
+Content-Type: application/json
+X-API-Key: test_secret_key
+Idempotency-Key: <unique-client-generated-key>
+```
 
-### User Story 1: The First Transaction (Happy Path)
+Request body:
 
-**As a** client system (e.g., an online store),
-**I want to** send a payment request with a unique ID,
-**So that** my transaction is processed successfully.
+```json
+{
+  "amount": 100,
+  "currency": "GHS"
+}
+```
 
-**Acceptance Criteria:**
+First request:
 
-- [ ] The API accepts a `POST` request to endpoint `/process-payment`.
-- [ ] The request header must contain `Idempotency-Key: <some-unique-string>`.
-- [ ] The request body accepts a JSON object (e.g., `{"amount": 100, "currency": "GHS"}`).
-- [ ] The server simulates processing (e.g., a 2-second delay) and returns a `200 OK` or `201 Created` response.
-- [ ] The response body should include a status message: `"Charged 100 GHS"`.
+```powershell
+curl -i -X POST http://127.0.0.1:5000/process-payment `
+  -H "Content-Type: application/json" `
+  -H "X-API-Key: test_secret_key" `
+  -H "Idempotency-Key: order-1001" `
+  -d "{\"amount\":100,\"currency\":\"GHS\"}"
+```
 
-### User Story 2: The Duplicate Attempt (Idempotency Logic)
+Successful response:
 
-**As a** client system,
-**I want to** safely retry a request if I don't hear back,
-**So that** I don't accidentally double-charge the user.
+```http
+HTTP/1.0 201 Created
+X-Cache-Hit: false
+X-Idempotency-TTL-Seconds: 86400
+```
 
-**Acceptance Criteria:**
+```json
+{
+  "message": "Charged 100 GHS",
+  "transaction": {
+    "transaction_id": "txn_...",
+    "amount": 100.0,
+    "currency": "GHS",
+    "status": "charged",
+    "created_at": "..."
+  }
+}
+```
 
-- [ ] If the client sends a second `POST` request with the **same** `Idempotency-Key` and payload:
-  - [ ] The server must **NOT** run the processing logic again (no 2-second delay).
-  - [ ] The server must return the **exact same** response body and status code as the first successful request.
-  - [ ] The server returns a header `X-Cache-Hit: true` to indicate this was a replayed response.
+Duplicate request:
 
-### User Story 3: Different Request, Same Key (Fraud/Error Check)
+```powershell
+curl -i -X POST http://127.0.0.1:5000/process-payment `
+  -H "Content-Type: application/json" `
+  -H "X-API-Key: test_secret_key" `
+  -H "Idempotency-Key: order-1001" `
+  -d "{\"amount\":100,\"currency\":\"GHS\"}"
+```
 
-**As a** security officer,
-**I want to** reject requests that reuse keys for different payments,
-**So that** we maintain data integrity.
+Duplicate response:
 
-**Acceptance Criteria:**
+```http
+HTTP/1.0 201 Created
+X-Cache-Hit: true
+```
 
-- [ ] If a request arrives with an existing `Idempotency-Key` but a **different** request body (e.g., changing amount from 100 to 500):
-  - [ ] The server must return a `422 Unprocessable Entity` or `409 Conflict` error.
-  - [ ] The error message should state: `"Idempotency key already used for a different request body."`
+The response body and status code are the same as the first successful request. The payment processor is not called again, so there is no second processing delay.
 
----
+Same key with a different body:
 
-## 6. Bonus User Story (The "In-Flight" Check)
+```powershell
+curl -i -X POST http://127.0.0.1:5000/process-payment `
+  -H "Content-Type: application/json" `
+  -H "X-API-Key: test_secret_key" `
+  -H "Idempotency-Key: order-1001" `
+  -d "{\"amount\":500,\"currency\":\"GHS\"}"
+```
 
-**As a** system architect,
-**I want to** handle cases where two identical requests arrive at the exact same time,
-**So that** we don't succumb to race conditions.
+Conflict response:
 
-**Scenario:** Request A arrives. While Request A is still "processing" (during the 2-second delay), Request B (same key) arrives.
+```http
+HTTP/1.0 422 Unprocessable Entity
+```
 
-**Acceptance Criteria:**
+```json
+{
+  "error": {
+    "code": "IDEMPOTENCY_CONFLICT",
+    "message": "Idempotency key already used for a different request body."
+  }
+}
+```
 
-- [ ] Request B should not start a new process.
-- [ ] Request B should not return `409 Conflict`.
-- [ ] Request B should wait (block) until Request A finishes, and then return the result of Request A.
+### GET /payments/<transaction_id>
 
----
+Returns the status of one payment transaction.
 
-## 7. The "Developer's Choice" Challenge
+```powershell
+curl -i http://127.0.0.1:5000/payments/txn_example `
+  -H "X-API-Key: test_secret_key"
+```
 
-We believe great engineers are also product thinkers.
+### GET /transactions
 
-**Task:** Identify **one** additional feature or safety mechanism that would make this system better for a real-world Fintech company.
+Returns recent processed transactions.
 
-1.  **Implement it.**
-2.  **Document it:** Explain _why_ you added it in your README.
+```powershell
+curl -i http://127.0.0.1:5000/transactions `
+  -H "X-API-Key: test_secret_key"
+```
 
----
+### GET /audit-logs
 
-## 8. Documentation Requirements
+Returns recent request audit events.
 
-Your final `README.md` must replace these instructions. It must cover:
+```powershell
+curl -i http://127.0.0.1:5000/audit-logs `
+  -H "X-API-Key: test_secret_key"
+```
 
-1.  **Architecture Diagram**
-2.  **Setup Instructions**
-3.  **API Documentation**
-4.  **Design Decisions**
-5.  **The Developer's Choice:** Description of the extra feature you added.
+### GET /health
 
----
+Returns service health. This endpoint does not require an API key.
 
-Submit your repo link via the [online](https://forms.gle/Hsh5S5doEjTRbXCp8) form.
+```powershell
+curl http://127.0.0.1:5000/health
+```
 
----
+## Added Features And Why They Matter
 
-## 🛑 Pre-Submission Checklist
+### SQLite Persistence
 
-**WARNING:** Before you submit your solution, you **MUST** pass every item on this list.
-If you miss any of these critical steps, your submission will be **automatically rejected** and you will **NOT** be invited to an interview.
+Idempotency records and transactions are saved in `gateway.db`.
 
-### 1. 📂 Repository & Code
+Why it matters: an in-memory dictionary loses all keys when the server restarts. A payment processor must remember completed idempotency keys after a crash or redeploy, otherwise a retry after restart could double-charge a customer.
 
-- [ ] **Public Access:** Is your GitHub repository set to **Public**? (We cannot review private repos).
-- [ ] **Clean Code:** Did you remove unnecessary files (like `node_modules`, `.env` with real keys, or `.DS_Store`)?
-- [ ] **Run Check:** if we clone your repo and run `npm start` (or equivalent), does the server start immediately without crashing?
+### Payment Status Endpoint
 
-### 2. 📄 Documentation (Crucial)
+`GET /payments/<transaction_id>` lets clients check the status of a payment.
 
-- [ ] **Architecture Diagram:** Did you include a visual Diagram (Flowchart or Sequence Diagram) in the README?
-- [ ] **README Swap:** Did you **DELETE** the original instructions (the problem brief) from this file and replace it with your own documentation?
-- [ ] **API Docs:** Is there a clear list of Endpoints and Example Requests in the README?
+Why it matters: when a client times out, it should be able to ask the gateway what happened instead of blindly retrying forever.
 
-### 3. 🧹 Git Hygiene
+### Audit Logging
 
-- [ ] **Commit History:** Does your repo have multiple commits with meaningful messages? (A single "Initial Commit" is a red flag).
+The system logs payment processing, cache hits, conflicts, unauthorized requests, validation failures, and rate-limit events.
 
----
+Why it matters: fintech teams need audit trails for customer disputes, fraud investigation, debugging, and compliance reviews.
 
-**Ready?**
-If you checked all the boxes above, submit your repository link in the application form. Good luck! 🚀
+### Expiration Cleanup
+
+Completed idempotency records expire after 24 hours. Expired records are removed during request handling.
+
+Why it matters: idempotency keys should not grow forever. A clear retention window keeps storage bounded while still protecting normal retry behavior.
+
+### API Authentication
+
+Sensitive endpoints require:
+
+```text
+X-API-Key: test_secret_key
+```
+
+Why it matters: payment endpoints should never be open to anonymous callers. Even a simple API key shows that the gateway separates public health checks from protected payment operations.
+
+### Rate Limiting
+
+The API limits each client IP to 30 payment attempts per minute.
+
+Why it matters: rate limiting reduces abuse, accidental retry storms, and brute-force attempts against idempotency keys.
+
+### Consistent Error Format
+
+Errors use:
+
+```json
+{
+  "error": {
+    "code": "ERROR_CODE",
+    "message": "Human readable message"
+  }
+}
+```
+
+Why it matters: clients can safely write code against stable error codes while still showing readable messages to developers.
+
+## User Experience
+
+The browser page at `http://127.0.0.1:5000` includes a magazine-style service overview, working navigation, a live API test form, developer help content, contact information, and a footer. It uses the IgirePay logo from `img/logo-igire.png`.
+
+## Design Decisions
+
+- The project uses only the Python standard library so reviewers can run it immediately with `python app.py`.
+- SQLite is used instead of an external database so persistence works without setup. In production this could be PostgreSQL, Redis, or another shared durable store.
+- In-flight request coordination remains in memory with `threading.Event` because it only needs to coordinate requests currently handled by this running process.
+- Request bodies are normalized before hashing. This prevents harmless JSON formatting or field ordering differences from breaking duplicate detection.
+- The saved response body and status code are replayed exactly for duplicate requests.
+
+## Pre-Submission Checklist
+
+- Repository should be public.
+- Run command works: `python app.py`.
+- Test command works: `python -m unittest -v`.
+- No React, Node, generated dependency folders, or local database files are required in the repo.
+- README contains the architecture diagram, setup instructions, API docs, design decisions, and the extra production safety features.
