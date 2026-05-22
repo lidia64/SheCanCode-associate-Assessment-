@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="720" viewBox="0 0 1180 720" role="img" aria-labelledby="title desc">
+  <title id="title">Idempotency Gateway Architecture</title>
+  <desc id="desc">A flow diagram showing a client request passing through authentication, rate limiting, idempotency lookup, in-flight coordination, payment processing, SQLite storage, audit logging, and response replay.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#1f2937" />
+    </marker>
+    <style>
+      .bg { fill: #fbfaf7; }
+      .title { fill: #111827; font: 800 30px Arial, sans-serif; }
+      .subtitle { fill: #667085; font: 16px Arial, sans-serif; }
+      .box { fill: #ffffff; stroke: #d7d0c3; stroke-width: 2; rx: 14; }
+      .box-blue { fill: #eef6fb; stroke: #155e95; stroke-width: 2; rx: 14; }
+      .box-green { fill: #edf8f3; stroke: #167252; stroke-width: 2; rx: 14; }
+      .box-warn { fill: #fff7e8; stroke: #d99b2b; stroke-width: 2; rx: 14; }
+      .label { fill: #111827; font: 800 17px Arial, sans-serif; }
+      .small { fill: #667085; font: 13px Arial, sans-serif; }
+      .line { stroke: #1f2937; stroke-width: 2.2; fill: none; marker-end: url(#arrow); }
+      .dash { stroke: #6b7280; stroke-width: 2; stroke-dasharray: 7 7; fill: none; marker-end: url(#arrow); }
+      .note { fill: #364152; font: 14px Arial, sans-serif; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1180" height="720" />
+  <text class="title" x="50" y="58">IgirePay Idempotency Gateway Architecture</text>
+  <text class="subtitle" x="50" y="86">The Pay-Once Protocol protects retries from becoming duplicate charges.</text>
+
+  <rect class="box-blue" x="50" y="145" width="160" height="92" />
+  <text class="label" x="82" y="183">Client</text>
+  <text class="small" x="76" y="207">Online store</text>
+
+  <rect class="box" x="270" y="130" width="185" height="122" />
+  <text class="label" x="304" y="169">Gateway API</text>
+  <text class="small" x="299" y="194">POST /process-payment</text>
+  <text class="small" x="299" y="215">JSON response</text>
+
+  <rect class="box-warn" x="515" y="105" width="175" height="88" />
+  <text class="label" x="548" y="143">Auth</text>
+  <text class="small" x="546" y="166">X-API-Key check</text>
+
+  <rect class="box-warn" x="515" y="220" width="175" height="88" />
+  <text class="label" x="546" y="258">Rate Limit</text>
+  <text class="small" x="545" y="281">30 requests/minute</text>
+
+  <rect class="box" x="750" y="130" width="185" height="122" />
+  <text class="label" x="784" y="168">Request Hash</text>
+  <text class="small" x="779" y="193">Normalize body</text>
+  <text class="small" x="779" y="214">Detect conflicts</text>
+
+  <rect class="box-green" x="985" y="105" width="155" height="88" />
+  <text class="label" x="1019" y="143">SQLite</text>
+  <text class="small" x="1010" y="166">Saved responses</text>
+
+  <rect class="box-green" x="985" y="220" width="155" height="88" />
+  <text class="label" x="1006" y="258">Audit Log</text>
+  <text class="small" x="1009" y="281">Operational events</text>
+
+  <rect class="box" x="270" y="390" width="190" height="112" />
+  <text class="label" x="306" y="430">In-Flight Lock</text>
+  <text class="small" x="300" y="455">Waits for active key</text>
+  <text class="small" x="300" y="476">Prevents races</text>
+
+  <rect class="box-blue" x="535" y="390" width="205" height="112" />
+  <text class="label" x="565" y="430">Payment Processor</text>
+  <text class="small" x="572" y="455">2 second simulation</text>
+  <text class="small" x="572" y="476">Creates transaction</text>
+
+  <rect class="box-green" x="815" y="390" width="190" height="112" />
+  <text class="label" x="855" y="430">Transactions</text>
+  <text class="small" x="849" y="455">Payment status</text>
+  <text class="small" x="849" y="476">Lookup endpoint</text>
+
+  <path class="line" d="M 210 191 L 270 191" />
+  <path class="line" d="M 455 172 L 515 149" />
+  <path class="line" d="M 455 210 L 515 264" />
+  <path class="line" d="M 690 149 L 750 172" />
+  <path class="line" d="M 935 171 L 985 149" />
+  <path class="dash" d="M 935 211 L 985 264" />
+  <path class="line" d="M 842 252 C 840 340 420 330 365 390" />
+  <path class="line" d="M 460 446 L 535 446" />
+  <path class="line" d="M 740 446 L 815 446" />
+  <path class="dash" d="M 915 390 C 985 350 1010 315 1040 308" />
+  <path class="line" d="M 270 222 C 175 330 155 440 270 500" />
+
+  <rect class="box" x="50" y="585" width="1090" height="82" />
+  <text class="note" x="78" y="618">Duplicate with same body: return saved status and body with X-Cache-Hit: true.</text>
+  <text class="note" x="78" y="644">Duplicate with different body: reject with 422 IDEMPOTENCY_CONFLICT.</text>
+  <text class="note" x="600" y="618">Simultaneous duplicate: wait for the first request, then replay the result.</text>
+  <text class="note" x="600" y="644">Completed keys expire after 24 hours to keep storage bounded.</text>
+</svg>

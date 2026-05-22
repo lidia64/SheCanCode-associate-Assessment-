@@ -1,0 +1,2 @@
+﻿# No external Python packages are required.
+# This project runs with the Python standard library.
